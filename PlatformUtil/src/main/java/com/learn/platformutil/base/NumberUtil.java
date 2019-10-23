@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.learn.platformutil;
+package com.learn.platformutil.base;
 
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
