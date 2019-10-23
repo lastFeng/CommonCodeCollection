@@ -70,7 +70,7 @@ public class URLResourceUtil {
             // try URL
             return FileUtil.asInputStream(getFileByURL(new URL(generalPath)));
         } catch (MalformedURLException e) {
-            return new FileUtil().asInputStream(generalPath);
+            return FileUtil.asInputStream(generalPath);
         }
     }
 
