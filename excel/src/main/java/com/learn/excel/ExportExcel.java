@@ -17,6 +17,7 @@ package com.learn.excel;
 
 import com.google.common.collect.Lists;
 import com.learn.excel.annotation.ExcelField;
+import com.learn.textvalidator.text.Encodes;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.ss.util.CellRangeAddress;
@@ -24,10 +25,17 @@ import org.apache.poi.xssf.streaming.SXSSFWorkbook;
 import org.apache.poi.xssf.usermodel.XSSFClientAnchor;
 import org.apache.poi.xssf.usermodel.XSSFRichTextString;
 
+import javax.servlet.ServletOutputStream;
+import javax.servlet.http.HttpServletResponse;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -279,11 +287,183 @@ public class ExportExcel {
         return styles;
     }
 
+    public Row addRow() {
+        return sheet.createRow(rownum++);
+    }
+
     public Cell addCell(Row row, int column, Object val) {
         return this.addCell(row, column, val, 0, Class.class);
     }
 
+    /**
+     * @param row 添加的行
+     * @param column 添加列号
+     * @param val 添加值
+     * @param align 对齐方式（1：靠左；2：居中；3：靠右）
+     * @param fieldType 单元格对象
+     * */
     public Cell addCell(Row row, int column, Object val, int align, Class<?> fieldType) {
-        return null;
+        Cell cell = row.createCell(column);
+        String cellFormatString = "@";
+
+        try {
+            if (val == null) {
+                cell.setCellValue("");
+            } else if (fieldType != Class.class) {
+                cell.setCellValue((String)fieldType.getMethod("setValue", Object.class).invoke(null, val));
+            } else {
+                if (val instanceof String) {
+                    cell.setCellValue((String) val);
+                } else if (val instanceof Integer) {
+                    cell.setCellValue((Integer) val);
+                    cellFormatString = "0";
+                } else if (val instanceof Long) {
+                    cell.setCellValue((Long) val);
+                    cellFormatString = "0";
+                } else if (val instanceof Double) {
+                    cell.setCellValue((Double) val);
+                    cellFormatString = "0.00";
+                } else if (val instanceof Float) {
+                    cell.setCellValue((Float) val);
+                    cellFormatString = "0.00";
+                } else if (val instanceof Date) {
+                    cell.setCellValue((Date) val);
+                    cellFormatString = "yyyy-MM-dd HH:mm";
+                } else {
+                    cell.setCellValue((String)Class.forName(this.getClass().getName().replaceAll(
+                        this.getClass().getSimpleName(), "fieldtype." + val.getClass().getSimpleName() + "Type"
+                    )).getMethod("setValue", Object.class).invoke(null, val));
+                }
+            }
+
+            if (val != null) {
+                CellStyle style = styles.get("data_column" + column);
+                if (style == null) {
+                    style = wb.createCellStyle();
+                    style.cloneStyleFrom(styles.get("data" + (align >= 1 && align <=3 ? align : "")));
+                    style.setDataFormat(wb.createDataFormat().getFormat(cellFormatString));
+                    styles.put("data_column" + column, style);
+                }
+                cell.setCellStyle(style);
+            }
+        } catch (Exception e) {
+            cell.setCellValue(String.valueOf(val));
+        }
+        return cell;
+    }
+
+    /**
+     * 添加数据
+     * */
+    public <E> ExportExcel setDataList(List<E> list) {
+        for (E e: list) {
+            int colunm = 0;
+            Row row = this.addRow();
+            StringBuilder sb = new StringBuilder();
+            for (Object[] os: annotationList) {
+                ExcelField ef = (ExcelField) os[0];
+                Object val = null;
+
+                // get entity value
+                try {
+                    if (StringUtils.isNotBlank(ef.value())) {
+                        val = Reflections.invokeGetter(e, ef.value());
+                    } else {
+                        if (os[1] instanceof Field) {
+                            val = Reflections.invokeGetter(e, ((Field)os[1]).getName());
+                        } else if (os[1] instanceof Method) {
+                            val = Reflections.invokeMethod(e, ((Method)os[1]).getName(), new Class[]{}, new Object[]{});
+                        }
+                    }
+
+                    // if is dict, get dict label
+                    if (StringUtils.isNotBlank(ef.dictType())) {
+                        // TODO
+                    }
+                } catch (Exception ex) {
+                    val = "";
+                }
+                this.addCell(row, colunm++, val, ef.algin(), ef.fieldType());
+                sb.append(val + ", ");
+            }
+        }
+        return this;
+    }
+
+    /**
+     * 输出数据流
+     * */
+    public ExportExcel write(OutputStream outputStream) throws IOException {
+        wb.write(outputStream);
+        return this;
+    }
+    /**
+     * 输出到客户端
+     * */
+    public ExportExcel write(HttpServletResponse response, String fileName) throws IOException {
+        response.reset();
+        response.setContentType("application/octet-stream;charset=utf-8");
+        response.setHeader("Content-Disposition", "attachment; filename=" + Encodes.urlEncode(fileName));
+        write(response.getOutputStream());
+        return this;
+    }
+
+    /**
+     * 输出到文件
+     * */
+    public ExportExcel writeFile(String name) throws FileNotFoundException, IOException {
+        FileOutputStream os = new FileOutputStream(name);
+        this.write(os);
+        return this;
+    }
+
+    /**
+     * 从浏览器中下载
+     * */
+    public ExportExcel writeBrowser(ServletOutputStream servletOutputStream) throws IOException {
+        this.write(servletOutputStream);
+        return this;
+    }
+
+    /**
+     * 清理临时文件
+     * */
+    public ExportExcel dispose() {
+        wb.dispose();
+        return this;
+    }
+
+    /**
+     * 导出测试
+     * */
+    public static void main(String[] args) throws Exception {
+        List<String> headerList = Lists.newArrayList();
+        for (int i = 1; i <= 10; i++) {
+            headerList.add("表头" + i);
+        }
+
+        List<String> dataRowList = Lists.newArrayList();
+        for (int i = 1; i <= headerList.size(); i++) {
+            dataRowList.add("数据" + i);
+        }
+
+        List<List<String>> dataList = Lists.newArrayList();
+        for (int i = 1; i <= 100000; i++) {
+            dataList.add(dataRowList);
+        }
+
+        ExportExcel ee = new ExportExcel("表格标题", headerList);
+
+        for (int i = 0; i < dataRowList.size(); i++) {
+            Row row = ee.addRow();
+            for (int j = 0; j < dataList.get(i).size(); j++) {
+                ee.addCell(row, j, dataList.get(i).get(j));
+            }
+        }
+
+        ee.writeFile("target/export.xlsx");
+        ee.dispose();
+
+        System.out.println("Export success");
     }
 }
