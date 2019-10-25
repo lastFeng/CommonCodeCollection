@@ -17,7 +17,6 @@ package com.learn.excel;
 
 import com.google.common.collect.Lists;
 import com.learn.excel.annotation.ExcelField;
-import com.learn.textvalidator.text.Encodes;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.ss.util.CellRangeAddress;
@@ -89,6 +88,7 @@ public class ExportExcel {
      * @param cla
      * @param type 导出导入类型
      * @param groups 导入分组
+     * @since 1.8
      * */
     public ExportExcel(String title, Class<?> cla, int type, int... groups) {
 
@@ -145,7 +145,14 @@ public class ExportExcel {
         }
 
         // Field sorting
-        Collections.sort(annotationList, Comparator.comparing(o -> new Integer(((ExcelField) o[0]).sort())));
+        Collections.sort(annotationList, new Comparator<Object[]>() {
+            @Override
+            public int compare(Object[] o1, Object[] o2) {
+                return new Integer(((ExcelField)o1[0]).sort()).compareTo(
+                    new Integer(((ExcelField)o2[0]).sort())
+                );
+            }
+        });
 
         // initialize
         List<String> headerList = Lists.newArrayList();
@@ -228,7 +235,7 @@ public class ExportExcel {
     }
 
     private Map<String, CellStyle> createStyles(SXSSFWorkbook wb) {
-        Map<String, CellStyle> styles = new HashMap<>();
+        Map<String, CellStyle> styles = new HashMap<String, CellStyle>();
 
         // title style
         CellStyle style = wb.createCellStyle();
